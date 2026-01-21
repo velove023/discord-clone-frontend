@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'discord-clone-backend-production-9a84.up.railway.app'; // Ganti dengan URL Railway nanti
+// PENTING: Ganti dengan URL Railway backend Anda
+const BACKEND_URL = 'https://discord-clone-backend-production-9a84.up.railway.app';
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -14,6 +15,7 @@ function App() {
   const [newMessage, setNewMessage] = useState('');
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [isTyping, setIsTyping] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
   const channels = ['general', 'random', 'gaming', 'music'];
@@ -26,11 +28,22 @@ function App() {
   // Socket connection
   useEffect(() => {
     if (isLoggedIn) {
-      const newSocket = io(BACKEND_URL);
+      const newSocket = io(BACKEND_URL, {
+        transports: ['websocket', 'polling'],
+        secure: true
+      });
+      
       setSocket(newSocket);
 
-      newSocket.emit('user-join', username);
-      newSocket.emit('join-channel', currentChannel);
+      newSocket.on('connect', () => {
+        console.log('Connected to server');
+        newSocket.emit('user-join', username);
+        newSocket.emit('join-channel', currentChannel);
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+      });
 
       // Listen for new messages
       newSocket.on('new-message', (data) => {
@@ -48,17 +61,29 @@ function App() {
         setTimeout(() => setIsTyping(''), 2000);
       });
 
-      return () => newSocket.close();
+      return () => {
+        newSocket.close();
+      };
     }
   }, [isLoggedIn, username, currentChannel]);
 
   // Load messages when changing channel
   useEffect(() => {
     if (isLoggedIn) {
+      setIsLoading(true);
       fetch(`${BACKEND_URL}/api/messages/${currentChannel}`)
-        .then(res => res.json())
-        .then(data => setMessages(data))
-        .catch(err => console.error(err));
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to load messages');
+          return res.json();
+        })
+        .then(data => {
+          setMessages(data);
+          setIsLoading(false);
+        })
+        .catch(err => {
+          console.error('Error loading messages:', err);
+          setIsLoading(false);
+        });
       
       if (socket) {
         socket.emit('join-channel', currentChannel);
@@ -68,6 +93,8 @@ function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
+    
     try {
       const res = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
@@ -79,16 +106,22 @@ function App() {
       
       if (res.ok) {
         setIsLoggedIn(true);
+        setPassword('');
       } else {
-        alert(data.error);
+        alert(data.error || 'Login failed');
       }
     } catch (error) {
       console.error('Login error:', error);
+      alert('Cannot connect to server. Please check your connection.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
+    
     try {
       const res = await fetch(`${BACKEND_URL}/api/register`, {
         method: 'POST',
@@ -100,11 +133,15 @@ function App() {
       
       if (res.ok) {
         alert('Registration successful! Please login.');
+        setPassword('');
       } else {
-        alert(data.error);
+        alert(data.error || 'Registration failed');
       }
     } catch (error) {
       console.error('Register error:', error);
+      alert('Cannot connect to server. Please check your connection.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -138,6 +175,7 @@ function App() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
+              disabled={isLoading}
             />
             <input
               type="password"
@@ -145,9 +183,14 @@ function App() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={isLoading}
             />
-            <button type="submit">Login</button>
-            <button type="button" onClick={handleRegister}>Register</button>
+            <button type="submit" disabled={isLoading}>
+              {isLoading ? 'Loading...' : 'Login'}
+            </button>
+            <button type="button" onClick={handleRegister} disabled={isLoading}>
+              Register
+            </button>
           </form>
         </div>
       </div>
@@ -180,17 +223,23 @@ function App() {
         </div>
         
         <div className="messages">
-          {messages.map((msg, index) => (
-            <div key={index} className="message">
-              <span className="message-author">{msg.username}</span>
-              <span className="message-time">
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </span>
-              <div className="message-content">{msg.message}</div>
-            </div>
-          ))}
-          {isTyping && (
-            <div className="typing-indicator">{isTyping} is typing...</div>
+          {isLoading ? (
+            <div className="loading">Loading messages...</div>
+          ) : (
+            <>
+              {messages.map((msg, index) => (
+                <div key={index} className="message">
+                  <span className="message-author">{msg.username}</span>
+                  <span className="message-time">
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </span>
+                  <div className="message-content">{msg.message}</div>
+                </div>
+              ))}
+              {isTyping && (
+                <div className="typing-indicator">{isTyping} is typing...</div>
+              )}
+            </>
           )}
           <div ref={messagesEndRef} />
         </div>
