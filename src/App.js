@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'discord-clone-backend-production-53b4.up.railway.app'; // Ganti dengan URL Railway nanti
+const BACKEND_URL = 'discord-clone-backend-production-9a84.up.railway.app'; // Ganti dengan URL Railway nanti
 
 function App() {
   const [socket, setSocket] = useState(null);
