@@ -50,7 +50,7 @@ function App() {
 
   // Socket connection
   useEffect(() => {
-    if (isLoggedIn && token) {
+    if (isLoggedIn && token && currentUser) {
       const newSocket = io(BACKEND_URL);
       setSocket(newSocket);
 
@@ -72,34 +72,39 @@ function App() {
 
       newSocket.on('auth-error', () => {
         alert('Session expired. Please login again.');
-        handleLogout();
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setIsLoggedIn(false);
+        setToken('');
+        setCurrentUser(null);
       });
 
       return () => newSocket.close();
     }
-  }, [isLoggedIn, token, currentChannel]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, token, currentChannel, currentUser]);
 
   // Load messages when changing channel
   useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setMessages(data.messages || []);
+      } catch (err) {
+        console.error('Load messages error:', err);
+      }
+    };
+
     if (isLoggedIn && token) {
       loadMessages();
       if (socket) {
         socket.emit('join-channel', currentChannel);
       }
     }
-  }, [currentChannel, isLoggedIn, token]);
-
-  const loadMessages = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      setMessages(data.messages || []);
-    } catch (err) {
-      console.error('Load messages error:', err);
-    }
-  };
+  }, [currentChannel, isLoggedIn, token, socket]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
