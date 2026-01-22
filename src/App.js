@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com'; // Ganti dengan URL Render kamu
+const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com';
 
 function App() {
   const [socket, setSocket] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [currentView, setCurrentView] = useState('chat'); // 'chat' atau 'admin'
+  const [currentView, setCurrentView] = useState('chat');
   
   // Auth state
   const [username, setUsername] = useState('');
@@ -103,6 +103,13 @@ function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    
+    // Manual validation untuk login
+    if (!username.trim() || !password.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+    
     try {
       const res = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
@@ -130,6 +137,18 @@ function App() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    
+    // Manual validation untuk register
+    if (!username.trim() || !email.trim() || !password.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+    
+    if (password.length < 6) {
+      alert('Password must be at least 6 characters');
+      return;
+    }
+    
     try {
       const res = await fetch(`${BACKEND_URL}/api/register`, {
         method: 'POST',
@@ -143,6 +162,7 @@ function App() {
         alert('Registration successful! Please login.');
         setIsRegistering(false);
         setPassword('');
+        setEmail('');
       } else {
         alert(data.error);
       }
@@ -254,11 +274,9 @@ function App() {
         <div className="auth-box">
           <div className="auth-header">
             <h1>Discord Clone</h1>
-            <p className="auth-subtitle">
-              {isRegistering ? 'Create your account' : 'Welcome back!'}
-            </p>
+            <p>{isRegistering ? 'Create your account' : 'Welcome back!'}</p>
           </div>
-          
+
           <form onSubmit={isRegistering ? handleRegister : handleLogin}>
             <div className="form-group">
               <label>Username</label>
@@ -267,7 +285,6 @@ function App() {
                 placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                required
               />
             </div>
 
@@ -279,7 +296,6 @@ function App() {
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
                 />
               </div>
             )}
@@ -291,7 +307,6 @@ function App() {
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
                 minLength="6"
               />
               {isRegistering && (
@@ -308,7 +323,10 @@ function App() {
             {isRegistering ? (
               <>
                 Already have an account?{' '}
-                <button onClick={() => setIsRegistering(false)} className="btn-link">
+                <button onClick={() => {
+                  setIsRegistering(false);
+                  setEmail('');
+                }} className="btn-link">
                   Login
                 </button>
               </>
