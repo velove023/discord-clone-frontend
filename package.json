@@ -1,6 +1,6 @@
 {
-  "name": "discord-clone-frontend",
-  "version": "0.1.0",
+  "name": "discord-clone-frontend-v2",
+  "version": "2.0.0",
   "private": true,
   "dependencies": {
     "@testing-library/jest-dom": "^5.17.0",
