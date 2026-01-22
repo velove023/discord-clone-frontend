@@ -3,7 +3,7 @@ import io from 'socket.io-client';
 import './App.css';
 
 // PENTING: Ganti dengan URL Railway backend Anda
-const BACKEND_URL = 'https://discord-clone-backend-production-9a84.up.railway.app';
+const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com';
 
 function App() {
   const [socket, setSocket] = useState(null);
