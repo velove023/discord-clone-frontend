@@ -494,6 +494,7 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   
   const [socket, setSocket] = useState(null);
@@ -662,7 +663,7 @@ function App() {
       const res = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify(isLogin ? { username, password } : { username, email, password })
       });
       
       const data = await res.json();
@@ -865,6 +866,15 @@ function App() {
               onChange={(e) => setUsername(e.target.value)}
               required
             />
+            {!isLogin && (
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            )}
             <input
               type="password"
               placeholder="Password"
