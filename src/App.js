@@ -1095,7 +1095,7 @@ function App() {
         </div>
         
         <div className="messages">
-          {messages.map((msg) => (
+          {Array.isArray(messages) && messages.map((msg) => (
             <MessageComponent
               key={msg._id}
               msg={msg}
