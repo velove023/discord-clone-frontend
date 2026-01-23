@@ -548,7 +548,6 @@ function App() {
 
       newSocket.on('connect', () => {
         console.log('Socket connected');
-        newSocket.emit('join-channel', currentChannel);
       });
 
       newSocket.on('online-users', (users) => {
