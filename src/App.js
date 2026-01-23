@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com';
 
 // ==================== EMOJI PICKER COMPONENT ====================
 const EmojiPicker = ({ onSelect, onClose }) => {
