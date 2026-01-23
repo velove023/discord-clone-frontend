@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com';
+// Gunakan environment variable atau default ke localhost untuk development
+const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 // ==================== EMOJI PICKER COMPONENT ====================
 const EmojiPicker = ({ onSelect, onClose }) => {
@@ -159,7 +160,7 @@ const DirectMessageView = ({
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/dm`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -170,11 +171,11 @@ const DirectMessageView = ({
     } catch (err) {
       console.error('Load conversations error:', err);
     }
-  }, [token]);
+  };
 
   useEffect(() => {
     loadConversations();
-  }, [loadConversations]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -212,7 +213,7 @@ const DirectMessageView = ({
       socket.off('dm-sent', handleDMSent);
       socket.off('user-typing-dm', handleUserTypingDM);
     };
-  }, [socket, selectedDM, loadConversations]);
+  }, [socket, selectedDM]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startDM = async (username) => {
     try {
@@ -455,7 +456,7 @@ const SearchModal = ({ token, onClose, onSelectMessage }) => {
 
     setIsSearching(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/search?query=${searchTerm}`, {
+      const res = await fetch(`${BACKEND_URL}/api/search?query=${encodeURIComponent(searchTerm)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Search failed');
@@ -552,9 +553,52 @@ function App() {
   // Admin Panel States
   const [allUsers, setAllUsers] = useState([]);
 
+  // Theme initialization
   useEffect(() => {
     document.body.className = darkMode ? 'dark-mode' : 'light-mode';
   }, [darkMode]);
+
+  // Load channels
+  const loadChannels = async () => {
+    if (!token || !currentUser) return;
+    
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/channels`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load channels');
+      const data = await res.json();
+      setChannels(data);
+      if (data.length > 0 && !currentChannel) {
+        setCurrentChannel(data[0].name);
+      }
+    } catch (err) {
+      console.error('Load channels error:', err);
+    }
+  };
+
+  // Load channels when user is authenticated
+  useEffect(() => {
+    if (token && currentUser) {
+      loadChannels();
+    }
+  }, [token, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load messages for current channel
+  const loadMessages = async () => {
+    if (!currentChannel || !token) return;
+    
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load messages');
+      const data = await res.json();
+      setMessages(data.messages || []);
+    } catch (err) {
+      console.error('Load messages error:', err);
+    }
+  };
 
   // Initialize socket connection
   useEffect(() => {
@@ -639,56 +683,23 @@ function App() {
         newSocket.disconnect();
       };
     }
-  }, [token, currentUser, currentChannel]);
+  }, [token, currentUser, currentChannel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadChannels = useCallback(async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/channels`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Failed to load channels');
-      const data = await res.json();
-      setChannels(data);
-      if (data.length > 0 && !currentChannel) {
-        setCurrentChannel(data[0].name);
-      }
-    } catch (err) {
-      console.error('Load channels error:', err);
-    }
-  }, [token, currentChannel]);
-
-  useEffect(() => {
-    if (token && currentUser) {
-      loadChannels();
-    }
-  }, [token, currentUser, loadChannels]);
-
-  const loadMessages = useCallback(async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Failed to load messages');
-      const data = await res.json();
-      setMessages(data.messages || []);
-    } catch (err) {
-      console.error('Load messages error:', err);
-    }
-  }, [currentChannel, token]);
-
+  // Load messages when channel changes
   useEffect(() => {
     if (socket && currentChannel) {
       socket.emit('join-channel', currentChannel);
       loadMessages();
     }
-  }, [currentChannel, socket, loadMessages]);
+  }, [currentChannel, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Admin Functions
-  const loadAllUsers = useCallback(async () => {
+  // Admin functions
+  const loadAllUsers = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -699,14 +710,15 @@ function App() {
     } catch (err) {
       console.error('Load users error:', err);
     }
-  }, [token]);
+  };
 
   useEffect(() => {
     if (currentView === 'admin' && currentUser && currentUser.role === 'admin') {
       loadAllUsers();
     }
-  }, [currentView, currentUser, loadAllUsers]);
+  }, [currentView, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Authentication handler
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -744,9 +756,13 @@ function App() {
     setCurrentUser(null);
     setMessages([]);
     setChannels([]);
-    if (socket) socket.disconnect();
+    setOnlineUsers([]);
+    if (socket) {
+      socket.disconnect();
+    }
   };
 
+  // Message handling
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if ((newMessage.trim() || attachments.length > 0) && socket) {
@@ -784,6 +800,7 @@ function App() {
     }
   };
 
+  // File upload
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -809,6 +826,7 @@ function App() {
     }
   };
 
+  // Channel management
   const createChannel = async () => {
     const name = prompt('Enter channel name:');
     if (!name) return;
@@ -859,6 +877,7 @@ function App() {
     }
   };
 
+  // Message actions
   const handleEditMessage = async (messageId, newText) => {
     if (socket && newText.trim()) {
       socket.emit('edit-message', { 
@@ -894,10 +913,12 @@ function App() {
     setNewMessage(prev => `${prev}@${username} `);
   };
 
+  // Profile update
   const handleProfileUpdate = (updatedUser) => {
     setCurrentUser(updatedUser);
   };
 
+  // Admin actions
   const handleRoleChange = async (userId, newRole) => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}/role`, {
