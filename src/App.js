@@ -572,20 +572,9 @@ function App() {
         newSocket.disconnect();
       };
     }
-  }, [token, currentUser, currentChannel, loadChannels]);
+  }, [token, currentUser, loadChannels]);
 
-  useEffect(() => {
-    if (socket && currentChannel) {
-      socket.emit('join-channel', currentChannel);
-      loadMessages();
-    }
-  }, [currentChannel, socket]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -595,7 +584,18 @@ function App() {
     } catch (err) {
       console.error('Load messages error:', err);
     }
-  };
+  }, [currentChannel, token]);
+
+  useEffect(() => {
+    if (socket && currentChannel) {
+      socket.emit('join-channel', currentChannel);
+      loadMessages();
+    }
+  }, [currentChannel, socket, loadMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   useEffect(() => {
     if (!socket) return;
@@ -634,6 +634,19 @@ function App() {
       socket.off('message-reacted', handleMessageReacted);
     };
   }, [socket, currentChannel]);
+
+  // Admin Functions - Define loadAllUsers early
+  const loadAllUsers = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setAllUsers(data);
+    } catch (err) {
+      console.error('Load users error:', err);
+    }
+  }, [token]);
 
   // Load users when admin panel is active
   useEffect(() => {
@@ -779,19 +792,6 @@ function App() {
   const handleProfileUpdate = (updatedUser) => {
     setCurrentUser(updatedUser);
   };
-
-  // Admin Functions
-  const loadAllUsers = useCallback(async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      setAllUsers(data);
-    } catch (err) {
-      console.error('Load users error:', err);
-    }
-  }, [token]);
 
   const handleRoleChange = async (userId, newRole) => {
     try {

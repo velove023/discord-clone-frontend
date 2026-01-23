@@ -1,4 +1,20 @@
-/* ==================== GLOBAL STYLES ==================== */
+/* Default CSS Variables */
+:root {
+  --bg-primary: #36393f;
+  --bg-secondary: #2f3136;
+  --bg-tertiary: #202225;
+  --text-primary: #dcddde;
+  --text-secondary: #b9bbbe;
+  --text-muted: #72767d;
+  --accent: #5865f2;
+  --accent-hover: #4752c4;
+  --success: #3ba55d;
+  --warning: #faa61a;
+  --danger: #ed4245;
+  --border: #202225;
+  --input-bg: #40444b;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -7,9 +23,8 @@
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  transition: background-color 0.3s, color 0.3s;
+  background: var(--bg-tertiary);
 }
-
 /* Dark Mode */
 body.dark-mode {
   --bg-primary: #36393f;
