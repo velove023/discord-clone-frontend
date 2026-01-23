@@ -635,6 +635,13 @@ function App() {
     };
   }, [socket, currentChannel]);
 
+  // Load users when admin panel is active
+  useEffect(() => {
+    if (currentView === 'admin' && currentUser && currentUser.role === 'admin') {
+      loadAllUsers();
+    }
+  }, [currentView, currentUser, loadAllUsers]);
+
   const handleAuth = async (e) => {
     e.preventDefault();
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
@@ -890,10 +897,6 @@ function App() {
 
   // Admin Panel
   if (currentView === 'admin' && currentUser.role === 'admin') {
-    useEffect(() => {
-      loadAllUsers();
-    }, [loadAllUsers]);
-
     return (
       <div className="admin-panel">
         <div className="admin-header">
