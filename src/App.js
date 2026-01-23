@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const BACKEND_URL = 'https://discord-clone-backend-3sdm.onrender.com';
+const BACKEND_URL = 'http://localhost:3001';
 
 // ==================== EMOJI PICKER COMPONENT ====================
 const EmojiPicker = ({ onSelect, onClose }) => {
@@ -164,6 +164,7 @@ const DirectMessageView = ({
       const res = await fetch(`${BACKEND_URL}/api/dm`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('Failed to load conversations');
       const data = await res.json();
       setConversations(data);
     } catch (err) {
@@ -195,8 +196,8 @@ const DirectMessageView = ({
       }
     };
 
-    const handleUserTypingDM = (from) => {
-      if (selectedDM && from === selectedDM.otherUser) {
+    const handleUserTypingDM = (data) => {
+      if (selectedDM && data.from === selectedDM.otherUser) {
         setIsTyping(true);
         setTimeout(() => setIsTyping(false), 2000);
       }
@@ -218,11 +219,12 @@ const DirectMessageView = ({
       const res = await fetch(`${BACKEND_URL}/api/dm/${username}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('Failed to start DM');
       const data = await res.json();
       
       const otherUser = data.participants.find(p => p !== currentUser.username);
       setSelectedDM({ ...data, otherUser });
-      setDmMessages(data.messages);
+      setDmMessages(data.messages || []);
       setSearchUser('');
 
       // Mark as read
@@ -232,6 +234,7 @@ const DirectMessageView = ({
       });
     } catch (err) {
       console.error('Start DM error:', err);
+      alert('Failed to start DM: ' + err.message);
     }
   };
 
@@ -250,7 +253,10 @@ const DirectMessageView = ({
 
   const handleTyping = () => {
     if (socket && selectedDM) {
-      socket.emit('typing-dm', { to: selectedDM.otherUser });
+      socket.emit('typing-dm', { 
+        to: selectedDM.otherUser,
+        from: currentUser.username 
+      });
     }
   };
 
@@ -303,12 +309,12 @@ const DirectMessageView = ({
               </div>
               
               <div className="dm-messages">
-                {dmMessages.map((msg, idx) => (
+                {(dmMessages || []).map((msg, idx) => (
                   <div 
                     key={idx} 
-                    className={`dm-message ${msg.from === currentUser.username ? 'sent' : 'received'}`}
+                    className={`dm-message ${msg.sender === currentUser.username ? 'sent' : 'received'}`}
                   >
-                    <div className="dm-message-author">{msg.from}</div>
+                    <div className="dm-message-author">{msg.sender}</div>
                     <div className="dm-message-content">{msg.message}</div>
                     <div className="dm-message-time">
                       {new Date(msg.timestamp).toLocaleTimeString()}
@@ -348,22 +354,34 @@ const ProfileModal = ({ currentUser, token, onClose, onUpdate }) => {
   const [avatar, setAvatar] = useState(currentUser.avatar || '');
   const [customStatus, setCustomStatus] = useState(currentUser.customStatus || '');
   const [status, setStatus] = useState(currentUser.status || 'online');
+  const [bio, setBio] = useState(currentUser.bio || '');
+  const [loading, setLoading] = useState(false);
 
   const handleUpdate = async () => {
+    setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/users/profile`, {
+      const res = await fetch(`${BACKEND_URL}/api/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ avatar, customStatus, status })
+        body: JSON.stringify({ avatar, customStatus, status, bio })
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update profile');
+      }
+      
       const data = await res.json();
-      onUpdate(data.user);
+      onUpdate(data);
       onClose();
     } catch (err) {
       console.error('Profile update error:', err);
+      alert(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -385,6 +403,16 @@ const ProfileModal = ({ currentUser, token, onClose, onUpdate }) => {
             />
           </div>
           <div className="form-group">
+            <label>Bio</label>
+            <input
+              type="text"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell us about yourself"
+              maxLength="100"
+            />
+          </div>
+          <div className="form-group">
             <label>Custom Status</label>
             <input
               type="text"
@@ -400,13 +428,15 @@ const ProfileModal = ({ currentUser, token, onClose, onUpdate }) => {
               <option value="online">🟢 Online</option>
               <option value="away">🟡 Away</option>
               <option value="busy">🔴 Busy</option>
-              <option value="invisible">⚫ Invisible</option>
+              <option value="offline">⚫ Offline</option>
             </select>
           </div>
         </div>
         <div className="modal-footer">
           <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button onClick={handleUpdate} className="btn-primary">Save Changes</button>
+          <button onClick={handleUpdate} className="btn-primary" disabled={loading}>
+            {loading ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
     </div>
@@ -425,13 +455,15 @@ const SearchModal = ({ token, onClose, onSelectMessage }) => {
 
     setIsSearching(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/messages/search?q=${searchTerm}`, {
+      const res = await fetch(`${BACKEND_URL}/api/search?query=${searchTerm}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
       setSearchResults(data);
     } catch (err) {
       console.error('Search error:', err);
+      alert('Search failed: ' + err.message);
     } finally {
       setIsSearching(false);
     }
@@ -496,6 +528,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [isLogin, setIsLogin] = useState(true);
+  const [authError, setAuthError] = useState('');
   
   const [socket, setSocket] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -514,6 +547,7 @@ function App() {
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   // Admin Panel States
   const [allUsers, setAllUsers] = useState([]);
@@ -522,42 +556,42 @@ function App() {
     document.body.className = darkMode ? 'dark-mode' : 'light-mode';
   }, [darkMode]);
 
-  const loadChannels = useCallback(async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/channels`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      setChannels(data);
-    } catch (err) {
-      console.error('Load channels error:', err);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (token && currentUser) {
-      loadChannels();
-    }
-  }, [token, currentUser, loadChannels]);
-
+  // Initialize socket connection
   useEffect(() => {
     if (token && currentUser) {
       const newSocket = io(BACKEND_URL, {
+        transports: ['websocket', 'polling'],
         auth: { token }
       });
+      
       setSocket(newSocket);
 
       newSocket.on('connect', () => {
         console.log('Socket connected');
+        newSocket.emit('user-join', { 
+          username: currentUser.username, 
+          token 
+        });
       });
 
-      newSocket.on('online-users', (users) => {
+      newSocket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err);
+      });
+
+      newSocket.on('users-update', (users) => {
         setOnlineUsers(users);
       });
 
-      newSocket.on('user-typing', (username) => {
-        setIsTyping(username);
-        setTimeout(() => setIsTyping(''), 2000);
+      newSocket.on('user-typing', (data) => {
+        if (data.channel === currentChannel) {
+          setIsTyping(data.username);
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+          }
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping('');
+          }, 2000);
+        }
       });
 
       newSocket.on('channel-created', () => {
@@ -568,9 +602,64 @@ function App() {
         loadChannels();
       });
 
+      newSocket.on('new-message', (message) => {
+        if (message.channel === currentChannel) {
+          setMessages(prev => [...prev, message]);
+        }
+      });
+
+      newSocket.on('message-edited', (data) => {
+        setMessages(prev => 
+          prev.map(msg => msg._id === data.messageId ? { 
+            ...msg, 
+            message: data.message, 
+            edited: true,
+            editedAt: data.editedAt 
+          } : msg)
+        );
+      });
+
+      newSocket.on('message-deleted', (data) => {
+        setMessages(prev => prev.filter(msg => msg._id !== data.messageId));
+      });
+
+      newSocket.on('reaction-updated', (data) => {
+        setMessages(prev =>
+          prev.map(msg => msg._id === data.messageId ? { 
+            ...msg, 
+            reactions: data.reactions 
+          } : msg)
+        );
+      });
+
       return () => {
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
         newSocket.disconnect();
       };
+    }
+  }, [token, currentUser, currentChannel]);
+
+  const loadChannels = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/channels`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load channels');
+      const data = await res.json();
+      setChannels(data);
+      if (data.length > 0 && !currentChannel) {
+        setCurrentChannel(data[0].name);
+      }
+    } catch (err) {
+      console.error('Load channels error:', err);
+    }
+  }, [token, currentChannel]);
+
+  useEffect(() => {
+    if (token && currentUser) {
+      loadChannels();
     }
   }, [token, currentUser, loadChannels]);
 
@@ -579,8 +668,9 @@ function App() {
       const res = await fetch(`${BACKEND_URL}/api/messages/${currentChannel}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('Failed to load messages');
       const data = await res.json();
-      setMessages(data);
+      setMessages(data.messages || []);
     } catch (err) {
       console.error('Load messages error:', err);
     }
@@ -597,50 +687,13 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = (message) => {
-      if (message.channel === currentChannel) {
-        setMessages(prev => [...prev, message]);
-      }
-    };
-
-    const handleMessageEdited = (data) => {
-      setMessages(prev => 
-        prev.map(msg => msg._id === data.messageId ? { ...msg, message: data.newMessage, edited: true } : msg)
-      );
-    };
-
-    const handleMessageDeleted = (data) => {
-      setMessages(prev => prev.filter(msg => msg._id !== data.messageId));
-    };
-
-    const handleMessageReacted = (data) => {
-      setMessages(prev =>
-        prev.map(msg => msg._id === data.messageId ? { ...msg, reactions: data.reactions } : msg)
-      );
-    };
-
-    socket.on('new-message', handleNewMessage);
-    socket.on('message-edited', handleMessageEdited);
-    socket.on('message-deleted', handleMessageDeleted);
-    socket.on('message-reacted', handleMessageReacted);
-
-    return () => {
-      socket.off('new-message', handleNewMessage);
-      socket.off('message-edited', handleMessageEdited);
-      socket.off('message-deleted', handleMessageDeleted);
-      socket.off('message-reacted', handleMessageReacted);
-    };
-  }, [socket, currentChannel]);
-
-  // Admin Functions - Define loadAllUsers early
+  // Admin Functions
   const loadAllUsers = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error('Failed to load users');
       const data = await res.json();
       setAllUsers(data);
     } catch (err) {
@@ -648,7 +701,6 @@ function App() {
     }
   }, [token]);
 
-  // Load users when admin panel is active
   useEffect(() => {
     if (currentView === 'admin' && currentUser && currentUser.role === 'admin') {
       loadAllUsers();
@@ -657,6 +709,7 @@ function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    setAuthError('');
     const endpoint = isLogin ? '/api/login' : '/api/register';
     
     try {
@@ -666,6 +719,11 @@ function App() {
         body: JSON.stringify(isLogin ? { username, password } : { username, email, password })
       });
       
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Authentication failed');
+      }
+      
       const data = await res.json();
       
       if (data.token) {
@@ -673,10 +731,10 @@ function App() {
         setCurrentUser(data.user);
         localStorage.setItem('token', data.token);
       } else {
-        alert(data.message || 'Authentication failed');
+        throw new Error('No token received');
       }
     } catch (err) {
-      alert('Connection error');
+      setAuthError(err.message);
     }
   };
 
@@ -684,104 +742,151 @@ function App() {
     localStorage.removeItem('token');
     setToken('');
     setCurrentUser(null);
+    setMessages([]);
+    setChannels([]);
     if (socket) socket.disconnect();
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (newMessage.trim() || attachments.length > 0) {
+    if ((newMessage.trim() || attachments.length > 0) && socket) {
       const messageData = {
         channel: currentChannel,
+        username: currentUser.username,
         message: newMessage,
+        token,
         attachments: attachments,
-        token
+        mentions: extractMentions(newMessage)
       };
 
-      if (socket) {
-        socket.emit('send-message', messageData);
-        setNewMessage('');
-        setAttachments([]);
-      }
+      socket.emit('send-message', messageData);
+      setNewMessage('');
+      setAttachments([]);
     }
   };
 
+  const extractMentions = (text) => {
+    const mentionRegex = /@(\w+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.push(match[1]);
+    }
+    return mentions;
+  };
+
   const handleTyping = () => {
-    if (socket) {
-      socket.emit('typing', { channel: currentChannel, username: currentUser.username });
+    if (socket && currentUser) {
+      socket.emit('typing', { 
+        channel: currentChannel, 
+        username: currentUser.username 
+      });
     }
   };
 
   const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
+    const file = e.target.files[0];
+    if (!file) return;
+
     const formData = new FormData();
-    files.forEach(file => formData.append('files', file));
+    formData.append('file', file);
 
     try {
       const res = await fetch(`${BACKEND_URL}/api/upload`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       });
+      
+      if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
-      setAttachments(prev => [...prev, ...data.files]);
+      setAttachments(prev => [...prev, data]);
     } catch (err) {
       console.error('Upload error:', err);
+      alert('Failed to upload file: ' + err.message);
     }
   };
 
   const createChannel = async () => {
     const name = prompt('Enter channel name:');
-    if (name) {
-      try {
-        await fetch(`${BACKEND_URL}/api/channels`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ name })
-        });
-        loadChannels();
-      } catch (err) {
-        console.error('Create channel error:', err);
+    if (!name) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/channels`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to create channel');
       }
+      
+      loadChannels();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
-  const deleteChannel = async (channelId) => {
-    if (window.confirm('Delete this channel?')) {
-      try {
-        await fetch(`${BACKEND_URL}/api/channels/${channelId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        loadChannels();
-        if (channels.find(c => c._id === channelId)?.name === currentChannel) {
-          setCurrentChannel('general');
-        }
-      } catch (err) {
-        console.error('Delete channel error:', err);
+  const deleteChannel = async (channelId, channelName) => {
+    if (!window.confirm(`Delete channel #${channelName}? This will also delete all messages in this channel.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/channels/${channelId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete channel');
       }
+      
+      loadChannels();
+      if (channelName === currentChannel) {
+        setCurrentChannel('general');
+      }
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   const handleEditMessage = async (messageId, newText) => {
-    if (socket) {
-      socket.emit('edit-message', { messageId, newMessage: newText, token });
+    if (socket && newText.trim()) {
+      socket.emit('edit-message', { 
+        messageId, 
+        newMessage: newText, 
+        token 
+      });
     }
   };
 
   const handleDeleteMessage = async (messageId) => {
-    if (window.confirm('Delete this message?')) {
-      if (socket) {
-        socket.emit('delete-message', { messageId, token });
-      }
+    if (!window.confirm('Delete this message?')) return;
+
+    if (socket) {
+      socket.emit('delete-message', { 
+        messageId, 
+        token 
+      });
     }
   };
 
   const handleReaction = async (messageId, emoji) => {
     if (socket) {
-      socket.emit('react-message', { messageId, emoji, token });
+      socket.emit('react-message', { 
+        messageId, 
+        emoji, 
+        token 
+      });
     }
   };
 
@@ -795,7 +900,7 @@ function App() {
 
   const handleRoleChange = async (userId, newRole) => {
     try {
-      await fetch(`${BACKEND_URL}/api/admin/users/${userId}/role`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}/role`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -803,51 +908,84 @@ function App() {
         },
         body: JSON.stringify({ role: newRole })
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to change role');
+      }
+      
       loadAllUsers();
     } catch (err) {
-      console.error('Role change error:', err);
+      alert(err.message);
     }
   };
 
   const handleBanUser = async (userId, username) => {
-    if (window.confirm(`Ban user ${username}?`)) {
-      try {
-        await fetch(`${BACKEND_URL}/api/admin/users/${userId}/ban`, {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        loadAllUsers();
-      } catch (err) {
-        console.error('Ban user error:', err);
+    if (!window.confirm(`Ban user ${username}?`)) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}/ban`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          duration: 24, // 24 hours
+          reason: 'Violation of community guidelines'
+        })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to ban user');
       }
+      
+      loadAllUsers();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   const handleUnbanUser = async (userId, username) => {
-    if (window.confirm(`Unban user ${username}?`)) {
-      try {
-        await fetch(`${BACKEND_URL}/api/admin/users/${userId}/unban`, {
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        loadAllUsers();
-      } catch (err) {
-        console.error('Unban user error:', err);
+    if (!window.confirm(`Unban user ${username}?`)) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}/unban`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to unban user');
       }
+      
+      loadAllUsers();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   const handleDeleteUser = async (userId, username) => {
-    if (window.confirm(`Permanently delete user ${username}? This cannot be undone!`)) {
-      try {
-        await fetch(`${BACKEND_URL}/api/admin/users/${userId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        loadAllUsers();
-      } catch (err) {
-        console.error('Delete user error:', err);
+    if (!window.confirm(`Permanently delete user ${username}? This cannot be undone!`)) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete user');
       }
+      
+      loadAllUsers();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -881,7 +1019,11 @@ function App() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              minLength="6"
             />
+            {authError && (
+              <div className="auth-error">{authError}</div>
+            )}
             <button type="submit">{isLogin ? 'Login' : 'Register'}</button>
           </form>
           <p onClick={() => setIsLogin(!isLogin)} className="toggle-auth">
@@ -915,13 +1057,14 @@ function App() {
 
         <div className="admin-content">
           <div className="admin-section">
-            <h2>User Management</h2>
+            <h2>User Management ({allUsers.length} users)</h2>
             {allUsers.length > 0 ? (
               <div className="users-table-container">
                 <table className="users-table">
                   <thead>
                     <tr>
                       <th>Username</th>
+                      <th>Email</th>
                       <th>Role</th>
                       <th>Status</th>
                       <th>Banned</th>
@@ -932,12 +1075,16 @@ function App() {
                   <tbody>
                     {allUsers.map(user => (
                       <tr key={user._id}>
-                        <td>{user.username}</td>
+                        <td>
+                          <strong>{user.username}</strong>
+                          {user._id === currentUser.id && ' (You)'}
+                        </td>
+                        <td>{user.email}</td>
                         <td>
                           <select
                             value={user.role}
                             onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                            disabled={user.username === currentUser.username}
+                            disabled={user._id === currentUser.id}
                           >
                             <option value="member">Member</option>
                             <option value="moderator">Moderator</option>
@@ -945,17 +1092,17 @@ function App() {
                           </select>
                         </td>
                         <td>
-                          <span className={`status-badge ${user.status}`}>
-                            {user.status}
+                          <span className={`status-badge ${user.status || 'offline'}`}>
+                            {user.status || 'offline'}
                           </span>
                         </td>
                         <td>
                           {user.isBanned ? (
                             <span className="banned-badge">
-                              ✖ {user.bannedUntil ? 'Temp' : 'Perm'}
+                              ✖ {user.bannedUntil ? `Until ${new Date(user.bannedUntil).toLocaleDateString()}` : 'Permanent'}
                             </span>
                           ) : (
-                            <span className="not-banned">✓</span>
+                            <span className="not-banned">✓ Active</span>
                           )}
                         </td>
                         <td>{new Date(user.createdAt).toLocaleDateString()}</td>
@@ -965,6 +1112,7 @@ function App() {
                               <button 
                                 onClick={() => handleUnbanUser(user._id, user.username)}
                                 className="btn-success-small"
+                                disabled={user._id === currentUser.id}
                               >
                                 Unban
                               </button>
@@ -972,6 +1120,7 @@ function App() {
                               <button 
                                 onClick={() => handleBanUser(user._id, user.username)}
                                 className="btn-warning-small"
+                                disabled={user._id === currentUser.id}
                               >
                                 Ban
                               </button>
@@ -979,6 +1128,7 @@ function App() {
                             <button 
                               onClick={() => handleDeleteUser(user._id, user.username)}
                               className="btn-delete"
+                              disabled={user._id === currentUser.id}
                             >
                               Delete
                             </button>
@@ -1022,7 +1172,7 @@ function App() {
       {/* Sidebar - Channels */}
       <div className="sidebar">
         <div className="server-name">
-          My Server
+          Discord Clone
           <div className="user-badge">{currentUser.role}</div>
         </div>
         
@@ -1035,32 +1185,36 @@ function App() {
               </button>
             )}
           </div>
-          {channels.map(channel => (
-            <div
-              key={channel._id || channel.name}
-              className={`channel ${currentChannel === channel.name ? 'active' : ''}`}
-              onClick={() => setCurrentChannel(channel.name)}
-            >
-              <span># {channel.name}</span>
-              {currentUser.role === 'admin' && channel._id && (
-                <button
-                  className="delete-channel-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteChannel(channel._id);
-                  }}
-                  title="Delete Channel"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
+          {channels.length > 0 ? (
+            channels.map(channel => (
+              <div
+                key={channel._id}
+                className={`channel ${currentChannel === channel.name ? 'active' : ''}`}
+                onClick={() => setCurrentChannel(channel.name)}
+              >
+                <span># {channel.name}</span>
+                {currentUser.role === 'admin' && channel._id && (
+                  <button
+                    className="delete-channel-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteChannel(channel._id, channel.name);
+                    }}
+                    title="Delete Channel"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="no-channels">No channels available</div>
+          )}
         </div>
 
         <div className="user-info">
           <div className="user-details" onClick={() => setShowProfile(true)}>
-            <img src={currentUser.avatar} alt="" className="user-avatar-small" />
+            <img src={currentUser.avatar} alt={currentUser.username} className="user-avatar-small" />
             <div>
               <div className="username">{currentUser.username}</div>
               <div className="user-role-text">{currentUser.role}</div>
@@ -1105,17 +1259,23 @@ function App() {
         </div>
         
         <div className="messages">
-          {Array.isArray(messages) && messages.map((msg) => (
-            <MessageComponent
-              key={msg._id}
-              msg={msg}
-              currentUser={currentUser}
-              onEdit={handleEditMessage}
-              onDelete={handleDeleteMessage}
-              onReact={handleReaction}
-              onMention={handleMention}
-            />
-          ))}
+          {messages.length > 0 ? (
+            messages.map((msg) => (
+              <MessageComponent
+                key={msg._id}
+                msg={msg}
+                currentUser={currentUser}
+                onEdit={handleEditMessage}
+                onDelete={handleDeleteMessage}
+                onReact={handleReaction}
+                onMention={handleMention}
+              />
+            ))
+          ) : (
+            <div className="no-messages">
+              No messages yet in #{currentChannel}. Start the conversation!
+            </div>
+          )}
           {isTyping && (
             <div className="typing-indicator">{isTyping} is typing...</div>
           )}
@@ -1141,6 +1301,7 @@ function App() {
             type="file"
             onChange={handleFileUpload}
             style={{ display: 'none' }}
+            accept="image/*,.pdf,.doc,.docx"
           />
           <button
             type="button"
@@ -1155,34 +1316,46 @@ function App() {
             placeholder={`Message #${currentChannel} (use @username to mention)`}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleTyping}
+            onKeyDown={handleTyping}
           />
-          <button type="submit">Send</button>
+          <button type="submit" disabled={!newMessage.trim() && attachments.length === 0}>
+            Send
+          </button>
         </form>
       </div>
 
       {/* Online Users Sidebar */}
       <div className="users-sidebar">
         <div className="users-header">ONLINE - {onlineUsers.length}</div>
-        {onlineUsers.map((user, index) => (
-          <div 
-            key={index} 
-            className="user"
-            onClick={() => {
-              setCurrentView('dm');
-            }}
-            style={{ cursor: 'pointer' }}
-            title="Click to send DM"
-          >
-            <span className={`user-status ${user.status || 'online'}`}></span>
-            <div className="user-info-sidebar">
-              <div>{user.username}</div>
-              {user.role !== 'member' && (
-                <div className="user-role-badge">{user.role}</div>
-              )}
+        {onlineUsers.length > 0 ? (
+          onlineUsers.map((user, index) => (
+            <div 
+              key={index} 
+              className="user"
+              onClick={() => {
+                if (user.username !== currentUser.username) {
+                  setCurrentView('dm');
+                  // In a real app, you would open DM with this user
+                }
+              }}
+              style={{ cursor: user.username !== currentUser.username ? 'pointer' : 'default' }}
+              title={user.username !== currentUser.username ? "Click to send DM" : "This is you"}
+            >
+              <span className={`user-status ${user.status || 'online'}`}></span>
+              <div className="user-info-sidebar">
+                <div>
+                  {user.username}
+                  {user.username === currentUser.username && ' (You)'}
+                </div>
+                {user.role !== 'member' && (
+                  <div className="user-role-badge">{user.role}</div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          <div className="no-online-users">No one else is online</div>
+        )}
       </div>
     </div>
   );
