@@ -656,7 +656,7 @@ function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const endpoint = isLogin ? '/api/login' : '/api/register';
     
     try {
       const res = await fetch(`${BACKEND_URL}${endpoint}`, {
